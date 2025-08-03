@@ -1,0 +1,199 @@
+---
+title: "Proyecto Bellabeat"
+author: "Damian L. Angelucci"
+date: "2025-07-31"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(lubridate)
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Introducción 
+Este informe presenta los resultados de un análisis realizado sobre los patrones de sueño y actividad de usuarios de dispositivos de bienestar, como los que ofrece Bellabeat. Se utilizaron datos recolectados sobre pasos diarios, tiempo en cama y minutos dormidos. El objetivo fue identificar tendencias útiles para generar recomendaciones accionables para la empresa Bellabeat y ayudar a sus usuarios a mejorar su descanso.
+
+# Objetivos del Análisis
+- Investigar los patrones de sueño según el día de la semana.
+- Analizar la eficiencia del sueño (minutos dormidos vs tiempo en cama).
+- Evaluar la relación entre nivel de actividad física y cantidad de sueño.
+- Generar recomendaciones para Bellabeat basadas en los hallazgos.
+
+
+## Carga de las tablas dailyActivity & sleepDay:
+```{r}
+daily <- read_csv("dailyActivity_merged.csv")
+sleep <- read_csv("sleepDay_merged.csv")
+```
+
+
+## Tablas cargadas
+```{r}
+# Tabla daily
+glimpse(daily)
+# Tabla sleep
+glimpse(sleep)
+```
+
+
+# Limpieza y procesamiento de los datos
+## Formateo de fechas con mdy: configura fecha en yyyy-mm-dd
+```{r}
+daily <- daily |> mutate(activity_date = mdy(ActivityDate))
+# Tabla daily
+glimpse(daily)
+
+sleep <- mutate(sleep, sleep_day = sub(" .*", "", SleepDay))
+sleep <- mutate(sleep, sleep_day = mdy(sleep_day))
+# Tabla sleep
+glimpse(sleep)
+```
+
+
+## Concatenación de id y la fecha en una nueva columna id_date
+```{r}
+daily <- daily |> mutate(id_date = paste(Id, activity_date))
+# Tabla daily con id_date
+glimpse(daily)
+
+sleep <- sleep |> mutate(id_date = paste(Id, sleep_day))
+# Tabla sleep con id_date
+glimpse(sleep)
+```
+
+
+## Unión de tablas daily-sleep por id_date
+```{r}
+daily_merged <- left_join(daily,sleep |> 
+  select(id_date, TotalMinutesAsleep, TotalTimeInBed),by = "id_date") 
+# Tabla daily_merged
+glimpse(daily_merged)
+
+# Nuevos campos en daily_merged 
+daily_merged <- daily_merged |> 
+  mutate(
+    avg_Eficiencia = TotalMinutesAsleep / TotalTimeInBed, 
+    dia_semana = wday(activity_date, label= TRUE, abbr= FALSE),
+    nivelActividad = case_when(
+      TotalSteps >= 10000 ~ "Alto",
+      TotalSteps >= 5000 & TotalSteps <10000 ~ "Moderado",
+      TotalSteps < 5000 ~ "Bajo"
+    )
+  )
+
+# Tabla daily_merged creada
+glimpse(daily_merged)
+```
+
+# Análisis y Visualización de datos
+## A) TotalMinutesAsleep vs DiaSemana
+```{r}
+avg_sueño_dia <- daily_merged %>% 
+  group_by(dia_semana) %>% 
+    summarise(avg_TotalMinutesAsleep = mean(TotalMinutesAsleep, na.rm = TRUE))
+
+# Tabla avg_sueño_dia
+glimpse(avg_sueño_dia)
+```
+
+
+## Gráfica TotalMinutesAsleep vs DiaSemana
+```{r}
+ggplot(avg_sueño_dia, aes(x= dia_semana, y= avg_TotalMinutesAsleep)) + 
+geom_col(fill= "#69b3a2") + 
+labs(title = "Sueño promedio por dia de semana")
+```
+
+Se observó que los domingos y los miércoles son los días en que los usuarios duermen más en promedio.
+Insigth: Los fines de semana permiten mayor descanso, aunque no siempre con buena calidad. 
+
+
+## B) EficienciaProm vs DiaSemana
+```{r}
+avg_eficiencia_dia <- daily_merged %>% 
+  group_by(dia_semana) %>% 
+    summarise(Eficiencia = mean(avg_Eficiencia, na.rm = TRUE))
+
+# Tabla avg_eficiencia_dia
+glimpse(avg_eficiencia_dia)
+```
+
+
+## Gráfica EficienciaProm vs DiaSemana
+```{r}
+ggplot(avg_eficiencia_dia, aes(x= dia_semana, y= Eficiencia)) + 
+geom_col(fill= "#00FF00") + 
+labs(title= "Eficiencia promedio por día de semana")
+```
+
+Los días con más sueño (como el domingo) no son los más eficientes. La eficiencia es mayor de miércoles a viernes.
+Insight: Durante la semana laboral, los usuarios tienden a dormir menos tiempo pero de forma más eficiente.
+
+
+## C) NivelActividad vs DiaSemana
+```{r}
+avg_nivel_actividad <- daily_merged %>% 
+  group_by(nivelActividad) %>% 
+    summarise(avg_Sueño = mean(TotalMinutesAsleep, na.rm = TRUE))
+
+# Tabla avg_nivel_actividad
+glimpse(avg_nivel_actividad)
+```
+
+
+## Grafica NivelActividad vs DiaSemana
+```{r}
+ggplot(avg_nivel_actividad, aes(x= nivelActividad, y= avg_Sueño)) +
+geom_col(fill="#0000FF") + 
+labs(title= "Sueño promedio por nivel de actividad")
+```
+
+El análisis mostró que los niveles de actividad física más altos no están relacionados con más sueño. En algunos casos, el sueño disminiye.
+Insight: Los usuarios más activos podrían tener rutinas más intensas y dormir menos.
+
+
+
+## D) Eficiencia prom vs Sueño promedio
+```{r}
+eficiencia_sueño <- daily_merged %>% 
+  group_by(dia_semana) %>% 
+	  summarise(
+		  avg_Sueño = mean(TotalMinutesAsleep, na.rm = TRUE), 
+		  Eficiencia = mean(avg_Eficiencia, na.rm = TRUE)
+	  ) 
+
+# Tabla eficiencia_sueño
+glimpse(eficiencia_sueño)
+```
+
+
+## Gráfica Eficiencia prom vs Sueño promedio
+```{r}
+ggplot(eficiencia_sueño, aes(x= dia_semana)) +
+geom_col(aes(y= avg_Sueño), fill="#FF0000") +
+geom_line(aes(y= Eficiencia * 100, group=1), color= "blue", size= 1.2)+
+geom_point(aes(y= Eficiencia * 100), color= "blue", size= 3) +
+scale_y_continuous(
+	name= "Promedio de minutos dormidos",
+	sec.axis= sec_axis(~./100, name= "Eficiencia del sueño")
+) +
+labs(title="Sueño promedio vs Eficiencia promedio") +
+theme_minimal() 
+```
+
+Al comparar la duración de sueño y eficiencia del sueño por día, se observó que mayor cantidad de minutos de sueño no implica mejor descanso.
+Insight: El domingo se duerme más, pero con menor eficiencia; jueves y viernes se duerme menos, pero con mayor calidad.
+
+
+## Recomendaciones para Bellabeat
+1. Enfocar métricas y notificaciones en la eficiencia del suelo, no solo en la cantidad de minutos.
+2. Agregar recomendaciones personalizadas según el día de la semana (Por ejemplo, fines de semana).
+3. Detectar patrones individuales de baja eficiencia y proponer acciones concretas.
+4. Incentivar rutinas de sueño regulares para mejorar la calidad del descanso.
+
+
+# Conclusiones 
+El comportamiento del sueño no depende solamente de la cantidad de horas dormidas, sino también del contexto diario, la rutina y la estructura semanal. Bellabeat tiene la oportunidad de desarrollar funciones que ayuden a sus usuarios a mejorar no solo cuanto duermen, sino cómo duermen, enfocándose en la eficiencia y la personalización.
+
